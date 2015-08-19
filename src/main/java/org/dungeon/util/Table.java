@@ -17,24 +17,32 @@
 
 package org.dungeon.util;
 
+import org.dungeon.game.ColoredString;
+import org.dungeon.game.DungeonStringBuilder;
+import org.dungeon.game.Writable;
 import org.dungeon.gui.GameWindow;
-import org.dungeon.io.DungeonLogger;
-import org.dungeon.io.Writer;
+
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Table class that provides table functionality for printing in-game tables.
+ * Table class that represents an arrangement of strings in rows and columns.
+ *
+ * Only allows for data addition, you cannot query or update a Table in any way. This class is used for data
+ * visualization, not organization or storage.
  */
-public class Table {
+public class Table implements Writable {
 
   private static final char HORIZONTAL_BAR = '-';
-  private static final char VERTICAL_BAR = '|';
-
+  private static final String VERTICAL_BAR = "|";
+  private static final int MAXIMUM_COLUMNS = 5;
+  private static final int MINIMUM_WIDTH = 1;
   /**
    * The content of the Table.
    */
-  private final ArrayList<Column> columns;
+  private final List<Column> columns = new ArrayList<Column>();
 
   /**
    * A List of Integers representing which rows should be preceded by horizontal separators.
@@ -46,10 +54,17 @@ public class Table {
   /**
    * Constructs a Table using the provided Strings as column headers.
    *
-   * @param headers the headers
+   * <strong>There is a hard limit of 5 headers</strong> in order to prevent huge wide tables that wouldn't ever fit the
+   * screen.
+   *
+   * @param headers the headers, not empty, less than 10 values
    */
   public Table(String... headers) {
-    columns = new ArrayList<Column>(headers.length);
+    if (headers.length == 0) {
+      throw new IllegalArgumentException("tried to create Table with no headers.");
+    } else if (headers.length > MAXIMUM_COLUMNS) {
+      throw new IllegalArgumentException("tried to create Table with more than " + MAXIMUM_COLUMNS + " headers.");
+    }
     for (String header : headers) {
       columns.add(new Column(header));
     }
@@ -67,31 +82,36 @@ public class Table {
   }
 
   /**
-   * Appends a row to a StringBuilder.
+   * Appends a row to a DungeonStringBuilder.
    *
-   * @param stringBuilder the StringBuilder object
-   * @param columnWidths the widths of the columns of the table
+   * @param builder the DungeonStringBuilder object
+   * @param widths the widths of the columns of the table
    * @param values the values of the row
    */
-  private static void appendRow(StringBuilder stringBuilder, int[] columnWidths, String... values) {
-    String currentValue;
+  private static void appendRow(DungeonStringBuilder builder, int[] widths, String... values) {
     for (int i = 0; i < values.length; i++) {
-      int columnWidth = columnWidths[i];
-      currentValue = values[i];
+      int columnWidth = widths[i];
+      String currentValue = values[i];
       if (currentValue.length() > columnWidth) {
-        stringBuilder.append(currentValue.substring(0, columnWidth - 3)).append("...");
+        if (columnWidth < 4) {
+          builder.append(
+              makeRepeatedCharacterString(columnWidth, '#')); // This is how spreadsheet editors seem to handle it.
+        } else {
+          builder.append(currentValue.substring(0, columnWidth - 3));
+          builder.append("...");
+        }
       } else {
-        stringBuilder.append(currentValue);
+        builder.append(currentValue);
         int extraSpaces = columnWidth - currentValue.length();
         for (int j = 0; j < extraSpaces; j++) {
-          stringBuilder.append(" ");
+          builder.append(" ");
         }
       }
       if (i < values.length - 1) {
-        stringBuilder.append(VERTICAL_BAR);
+        builder.append(VERTICAL_BAR);
       }
     }
-    stringBuilder.append('\n');
+    builder.append("\n");
   }
 
   /**
@@ -100,7 +120,8 @@ public class Table {
    * @param stringBuilder the StringBuilder object
    * @param columnWidths the width of the columns of the table
    */
-  private static void appendHorizontalSeparator(StringBuilder stringBuilder, int[] columnWidths, int columnCount) {
+  private static void appendHorizontalSeparator(DungeonStringBuilder stringBuilder, int[] columnWidths,
+      int columnCount) {
     String[] pseudoRow = new String[columnCount];
     for (int i = 0; i < columnWidths.length; i++) {
       pseudoRow[i] = makeRepeatedCharacterString(columnWidths[i], HORIZONTAL_BAR);
@@ -109,26 +130,54 @@ public class Table {
   }
 
   /**
-   * Inserts a row of values at the end of the table.
+   * Distributes a value among buckets. For instance, distributing 3 over {2, 3, 4} gives {3, 4, 5} and distributing -8
+   * over {5, 10} gives {1, 6}. If the division of value by the size of buckets is not exact, the first buckets are
+   * going to get more modified. For instance, distributing 3 over {2, 3} gives {4, 4} and distributing -8 over {5, 10,
+   * 15} gives {2, 7, 13}.
    *
-   * <p>If not enough values are supplied, the remaining columns are filled with the empty string.
+   * <p>The time complexity of this implementation is O(n) on the size of buckets.
    *
-   * <p>If too many values are supplied, a warning is logged and the table is left unchanged.
+   * @param value the total to be distributed
+   * @param buckets the buckets, not empty, not null
+   */
+  public static void distribute(int value, @NotNull int[] buckets) {
+    if (buckets.length == 0) {
+      throw new IllegalArgumentException("buckets must have at least one element.");
+    }
+    repeatModification(Math.abs(value), Integer.signum(value), buckets, MINIMUM_WIDTH);
+  }
+
+  private static void repeatModification(int repetitions, int modification, @NotNull int[] buckets,
+      final int minimumWidth) {
+    if (buckets.length == 0) {
+      throw new IllegalArgumentException("buckets must have at least one element.");
+    }
+    int i = 0;
+    while (repetitions > 0) {
+      if (buckets[i] + modification >= minimumWidth) {
+        buckets[i] += modification;
+        repetitions--;
+      }
+      i = (i + 1) % buckets.length;
+    }
+  }
+
+  /**
+   * Inserts a row of values at the end of the table. The number of provided values should equal the number of columns.
    *
    * @param values the values to be inserted
    */
   public void insertRow(String... values) {
-    int columnCount = columns.size();
-    if (values.length <= columnCount) {
-      for (int i = 0; i < columnCount; i++) {
-        if (i < values.length) {
-          columns.get(i).insertValue(values[i]);
-        } else {
-          columns.get(i).insertValue("");
-        }
+    if (values.length != columns.size()) {
+      String expectedButGotString = "Expected " + columns.size() + ", but got " + values.length + ".";
+      if (values.length < columns.size()) {
+        throw new IllegalArgumentException("provided less values than there are rows. " + expectedButGotString);
+      } else if (values.length > columns.size()) {
+        throw new IllegalArgumentException("provided more values than there are rows. " + expectedButGotString);
       }
-    } else {
-      DungeonLogger.warning("Tried to insert more values than columns.");
+    }
+    for (int i = 0; i < values.length; i++) {
+      columns.get(i).insertValue(values[i]);
     }
   }
 
@@ -139,51 +188,31 @@ public class Table {
     if (separators == null) {
       separators = new CounterMap<Integer>();
     }
-    separators.incrementCounter(getDimensions().get(0));
+    separators.incrementCounter(columns.get(0).rows.size());
   }
 
-  /**
-   * Tests if the table has a specific value.
-   *
-   * @param value the value
-   * @return true if the table contains the value, false otherwise
-   */
-  public boolean contains(String value) {
-    for (Column column : columns) {
-      if (column.contains(value)) {
-        return true;
-      }
+  private int[] calculateColumnWidths() {
+    System.out.println("Got here.");
+    int[] widths = new int[columns.size()];
+    for (int i = 0; i < widths.length; i++) {
+      widths[i] = columns.get(i).widestValue;
     }
-    return false;
+    // Subtract the number of columns to account for separators. Add one because there is not a separator at the end.
+    int availableColumns = GameWindow.COLS - columns.size() + 1;
+    int difference = availableColumns - DungeonMath.sum(widths);
+    distribute(difference, widths);
+    return widths;
   }
 
-  /**
-   * Returns a pair of the form (rows, columns) representing the table's dimensions.
-   */
-  public Dimensions getDimensions() {
-    int columnCount = columns.size();
-    if (columnCount != 0) {
-      return new Dimensions(columns.get(0).size(), columnCount);
-    } else {
-      return new Dimensions(0, 0);
-    }
-  }
-
-  /**
-   * Prints the table to the game window.
-   */
-  public void print() {
-    if (columns.isEmpty()) {
-      DungeonLogger.warning("Tried to print an empty Table.");
-      return;
-    }
+  @Override
+  public List<ColoredString> toColoredStringList() {
+    DungeonStringBuilder builder = new DungeonStringBuilder();
 
     int columnCount = columns.size();
     int[] columnWidths = calculateColumnWidths();
 
     int rowCount = columns.get(0).rows.size();
 
-    StringBuilder builder = new StringBuilder(GameWindow.COLS * rowCount + 16);
     String[] currentRow = new String[columnCount];
 
     // Insert headers
@@ -209,54 +238,31 @@ public class Table {
         appendRow(builder, columnWidths, currentRow);
       }
     }
-
-    // Dump to the window.
-    Writer.writeString(builder.toString());
-  }
-
-  private int[] calculateColumnWidths() {
-    int[] widths = new int[columns.size()];
-    for (int i = 0; i < widths.length; i++) {
-      widths[i] = columns.get(i).widestValue;
-    }
-    // Subtract the number of columns to account for separators. Add one because there is not a separator at the end.
-    int availableColumns = GameWindow.COLS - columns.size() + 1;
-    int difference = availableColumns - DungeonMath.sum(widths);
-    DungeonMath.distribute(difference, widths);
-    return widths;
+    return builder.toColoredStringList();
   }
 
   private class Column {
     final String header;
-    final ArrayList<String> rows;
+    final List<String> rows = new ArrayList<String>();
     int widestValue;
 
     public Column(String header) {
-      rows = new ArrayList<String>();
       this.header = header;
       widestValue = header.length();
     }
 
+    /**
+     * Inserts a new value at the end of this Column. If the provided value is null, an empty string is used.
+     *
+     * @param value the value to be inserted, null will be replaced by an empty string
+     */
     void insertValue(String value) {
       if (value == null) {
-        rows.add("");
-      } else {
-        rows.add(value);
-        int length = value.length();
-        if (length > widestValue) {
-          widestValue = length;
-        }
+        value = "";
       }
+      rows.add(value);
+      widestValue = Math.max(widestValue, value.length());
     }
-
-    boolean contains(String value) {
-      return rows.contains(value);
-    }
-
-    int size() {
-      return rows.size();
-    }
-
   }
 
 }

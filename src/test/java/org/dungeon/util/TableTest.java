@@ -18,58 +18,104 @@
 package org.dungeon.util;
 
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 
-import java.util.Random;
+import java.util.Arrays;
 
 public class TableTest {
 
-  private static Table table;
-
-  @Before
-  public void createTable() {
-    // Always create a new table before running a test.
-    table = new Table("A", "B", "C");
-    // Insert 100 integers into A.
-    for (int i = 0; i < 100; i++) {
-      table.insertRow(String.valueOf(i));
-    }
-  }
-
   @Test
-  public void testInsertRow() throws Exception {
-    Assert.assertTrue(table.getDimensions().equals(new Dimensions(100, 3)));
-    Random random = new Random();
-    // Insert 200 rows in the table.
-    for (int i = 0; i < 100; i++) {
-      if (random.nextBoolean()) {
-        table.insertRow(String.valueOf(i), String.valueOf(random.nextInt()));
-      } else {
-        table.insertRow(String.valueOf(i), String.valueOf(random.nextInt()), "");
+  public void insertRowShouldWorkWithTheCorrectAmountOfArguments() throws Exception {
+    Table table = new Table("A", "B");
+    try {
+      for (int i = 0; i < 100; i++) {
+        table.insertRow("1", "2");
       }
-      // Test if nulls are handled properly.
-      table.insertRow(null, null, null);
+    } catch (Exception unexpected) {
+      Assert.fail();
     }
-    Assert.assertTrue(table.getDimensions().equals(new Dimensions(300, 3)));
   }
 
   @Test
-  public void testContains() throws Exception {
-    // Check for the 100 values inserted by createTable().
-    for (int i = 0; i < 100; i++) {
-      Assert.assertTrue(table.contains(String.valueOf(i)));
+  public void constructorShouldThrowAnExceptionIfThereAreNoArguments() throws Exception {
+    try {
+      new Table();
+      Assert.fail("expected an IllegalArgumentException.");
+    } catch (IllegalArgumentException expected) {
     }
-    // There should be 200 empty Strings, 100 in B and 100 in C.
-    Assert.assertTrue(table.contains(""));
-    // There should not be any null.
-    Assert.assertFalse(table.contains(null));
   }
 
   @Test
-  public void testGetDimensions() throws Exception {
-    Dimensions expectedDimensions = new Dimensions(100, 3);
-    Assert.assertTrue(table.getDimensions().equals(expectedDimensions));
+  public void constructorShouldThrowAnExceptionIfThereAreTooManyArguments() throws Exception {
+    try {
+      new Table("A", "B", "C", "D", "E", "F");
+      Assert.fail("expected an IllegalArgumentException.");
+    } catch (IllegalArgumentException expected) {
+    }
+  }
+
+  @Test
+  public void insertRowShouldThrowAnExceptionWithTooFewArguments() throws Exception {
+    Table table = new Table("A", "B");
+    try {
+      table.insertRow("1");
+      Assert.fail("expected an IllegalArgumentException.");
+    } catch (IllegalArgumentException expected) {
+    }
+  }
+
+  @Test
+  public void insertRowShouldThrowAnExceptionWithTooManyArguments() throws Exception {
+    Table table = new Table("A", "B");
+    try {
+      table.insertRow("1", "2", "3");
+      Assert.fail("expected an IllegalArgumentException.");
+    } catch (IllegalArgumentException expected) {
+    }
+  }
+
+  @Test
+  public void distributeShouldFailOnEmptyArray() throws Exception {
+    int[] emptyArray = new int[0];
+    try {
+      Table.distribute(100, emptyArray);
+      Assert.fail("expected an IllegalArgumentException.");
+    } catch (IllegalArgumentException expected) {
+    }
+  }
+
+  @Test
+  public void testDistribute() throws Exception {
+    int[] array = {0, 0};
+    Table.distribute(100, array);
+    Assert.assertEquals(50, array[0]);
+    Assert.assertEquals(50, array[1]);
+    Table.distribute(-200, array);
+    Assert.assertEquals(-50, array[0]);
+    Assert.assertEquals(-50, array[1]);
+    Table.distribute(0, array);
+    Assert.assertEquals(-50, array[0]);
+    Assert.assertEquals(-50, array[1]);
+    Table.distribute(1, array);
+    Assert.assertEquals(-49, array[0]);
+    Assert.assertEquals(-50, array[1]);
+    // Test the examples given in the Javadoc.
+    int[] first = {2, 3, 4};
+    Table.distribute(3, first);
+    final int[] firstExpected = {3, 4, 5};
+    Assert.assertTrue(Arrays.equals(firstExpected, first));
+    int[] second = {5, 10};
+    Table.distribute(-8, second);
+    int[] secondExpected = {1, 6};
+    Assert.assertTrue(Arrays.equals(secondExpected, second));
+    int[] third = {2, 3};
+    Table.distribute(3, third);
+    final int[] thirdExpected = {4, 4};
+    Assert.assertTrue(Arrays.equals(thirdExpected, third));
+    int[] fourth = {5, 10, 15};
+    Table.distribute(-8, fourth);
+    int[] fourthExpected = {2, 7, 13};
+    Assert.assertTrue(Arrays.equals(fourthExpected, fourth));
   }
 
 }
